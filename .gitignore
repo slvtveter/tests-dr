@@ -1,0 +1,18 @@
+# Python environments
+venv/
+env/
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Pytest
+.pytest_cache/
+
+# IDEs
+.idea/
+.vscode/
+
+# Security - NEVER COMMIT CREDENTIALS
+config.json
