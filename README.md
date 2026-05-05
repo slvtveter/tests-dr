@@ -39,6 +39,13 @@ The tests verify:
 
 ## Run the projects
 
+### Prerequisites
+
+- Node.js and npm for `Library-DB-Express`
+- Java 17+ and Maven for `library-api-tests`
+- Python 3.10+ for the Selenium tests
+- Google Chrome for browser automation
+
 ### Library app
 
 ```bash
@@ -47,15 +54,30 @@ npm install
 npm start
 ```
 
+Open the app at:
+
+```bash
+http://localhost:3000
+```
+
 ### Library API tests
+
+In a second terminal, after the app is running:
 
 ```bash
 cd library-api-tests
 mvn test
 ```
 
+This project already uses `pom.xml` for Java dependencies, so no extra Java requirements file is needed.
+
 ### Selenium tests
 
 ```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 pytest
 ```
+
+The Python tests rely on the packages listed in `requirements.txt`.
