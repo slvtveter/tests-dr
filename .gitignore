@@ -16,3 +16,10 @@ __pycache__/
 
 # Security - NEVER COMMIT CREDENTIALS
 config.json
+
+# Local OS files
+.DS_Store
+
+# Generated artifacts
+cart_page.html
+library-api-tests/target/
