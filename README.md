@@ -81,3 +81,7 @@ pytest
 ```
 
 The Python tests rely on the packages listed in `requirements.txt`.
+
+Some Python tests also use `config.json` for real dr.com.tr login credentials.
+That file is kept out of Git because it may contain private email and password data.
+If you run the login or checkout tests, add your own valid credentials locally in `config.json`.
