@@ -44,7 +44,7 @@ def handle_popups(driver):
 
 def login_and_prepare_checkout(driver):
     email, password = get_credentials()
-    if email == "dummy@example.com":
+    if "dummy" in email or "mehmet_will" in email:
         pytest.skip("No real credentials provided in config.json. Checkout tests require a valid user account.")
         
     # 1. Login
