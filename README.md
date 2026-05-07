@@ -35,7 +35,6 @@ The tests verify:
 ## Repository contents
 
 - `Library-DB-Express/` — the Express + SQLite library application
-- `library-api-tests/` — JUnit tests for the library API
 - `library-api-tests-with-pit/` — unit tests and PIT coverage for `BookService`
 - `test_search.py`, `test_login.py`, `test_cart.py`, `test_checkout.py` — Selenium tests for dr.com.tr
 
@@ -44,7 +43,6 @@ The tests verify:
 ### Prerequisites
 
 - Node.js and npm for `Library-DB-Express`
-- Java 17+ and Maven for `library-api-tests`
 - Java 21+ and Maven for `library-api-tests-with-pit`
 - Python 3.10+ for the Selenium tests
 - Google Chrome for browser automation
@@ -62,17 +60,6 @@ Open the app at:
 ```bash
 http://localhost:3000
 ```
-
-### Library API tests
-
-In a second terminal, after the app is running:
-
-```bash
-cd library-api-tests
-mvn test
-```
-
-This project already uses `pom.xml` for Java dependencies, so no extra Java requirements file is needed.
 
 ### BookService + PIT tests
 
