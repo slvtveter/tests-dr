@@ -2,12 +2,19 @@ import pytest
 import time
 import json
 import os
+import tempfile
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
+from selenium.common.exceptions import NoSuchWindowException, TimeoutException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+
+LOGIN_SUCCESS_TIMEOUT = 180
+CHECKOUT_READY_TIMEOUT = 180
+CHROME_PROFILE_DIR = os.path.join(tempfile.gettempdir(), "dr-com-tr-selenium-profile")
+AUTH_COOKIES_PATH = os.path.join(tempfile.gettempdir(), "dr-com-tr-auth-cookies.json")
 
 def get_credentials():
     config_path = "config.json"
@@ -21,6 +28,7 @@ def get_credentials():
 def driver():
     options = webdriver.ChromeOptions()
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    options.add_argument(f"--user-data-dir={CHROME_PROFILE_DIR}")
     
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
@@ -42,21 +50,105 @@ def handle_popups(driver):
         except:
             pass
 
+def restore_auth_cookies(driver):
+    if not os.path.exists(AUTH_COOKIES_PATH):
+        return False
+
+    driver.get("https://www.dr.com.tr/")
+    with open(AUTH_COOKIES_PATH, "r") as f:
+        cookies = json.load(f)
+
+    for cookie in cookies:
+        filtered = {k: cookie[k] for k in ("name", "value", "domain", "path", "expiry", "secure", "httpOnly", "sameSite") if k in cookie}
+        try:
+            driver.add_cookie(filtered)
+        except Exception:
+            continue
+
+    driver.refresh()
+    driver.get("https://www.dr.com.tr/login")
+    try:
+        wait_for_login_redirect(driver, timeout=10)
+        return True
+    except TimeoutException:
+        return False
+
+def wait_for_login_redirect(driver, timeout=LOGIN_SUCCESS_TIMEOUT):
+    """Wait longer for manual CAPTCHA completion before continuing checkout setup."""
+    def login_redirected(d):
+        try:
+            current_url = d.current_url or ""
+        except NoSuchWindowException:
+            return False
+        return bool(current_url) and "/login" not in current_url
+
+    WebDriverWait(driver, timeout, poll_frequency=1).until(login_redirected)
+
+def wait_for_checkout_page(driver, timeout=CHECKOUT_READY_TIMEOUT):
+    """Wait for the checkout address page to render, even if the URL shape changes."""
+    def checkout_ready(d):
+        try:
+            current_url = (d.current_url or "").lower()
+        except NoSuchWindowException:
+            return False
+        if any(token in current_url for token in ("teslimat", "adres", "odeme", "checkout")):
+            return True
+
+        page_source = d.page_source.lower()
+        return any(token in page_source for token in ("js-add-new-address", "add-new-address-btn", "js-save-address", "btnsaveaddress"))
+
+    WebDriverWait(driver, timeout, poll_frequency=1).until(checkout_ready)
+
+def find_checkout_action_button(driver):
+    selectors = [
+        ".js-save-address",
+        "#btnSaveAddress",
+        "button[type='submit']",
+        "input[type='submit']",
+    ]
+    for selector in selectors:
+        for element in driver.find_elements(By.CSS_SELECTOR, selector):
+            label = " ".join(filter(None, [
+                (element.text or "").strip(),
+                element.get_attribute("value") or "",
+                element.get_attribute("aria-label") or "",
+                element.get_attribute("class") or "",
+            ])).lower()
+            if any(token in label for token in ("kaydet", "devam", "onay", "adres", "submit")):
+                return element
+
+    for element in driver.find_elements(By.CSS_SELECTOR, "button, input[type='button'], input[type='submit']"):
+        label = " ".join(filter(None, [
+            (element.text or "").strip(),
+            element.get_attribute("value") or "",
+            element.get_attribute("aria-label") or "",
+            element.get_attribute("class") or "",
+        ])).lower()
+        if any(token in label for token in ("kaydet", "devam", "onay", "adres", "submit")):
+            return element
+
+    raise AssertionError("Could not locate the checkout submit button.")
+
 def login_and_prepare_checkout(driver):
     email, password = get_credentials()
     if "dummy" in email or "mehmet_will" in email:
         pytest.skip("No real credentials provided in config.json. Checkout tests require a valid user account.")
+
+    logged_in = restore_auth_cookies(driver)
+    if not logged_in:
+        # 1. Login
+        driver.get("https://www.dr.com.tr/login")
+        handle_popups(driver)
         
-    # 1. Login
-    driver.get("https://www.dr.com.tr/login")
-    handle_popups(driver)
-    
-    driver.find_element(By.ID, "email").send_keys(email)
-    driver.find_element(By.ID, "password").send_keys(password)
-    login_btn = driver.find_element(By.CSS_SELECTOR, "button.auth-page__button.js-form-button")
-    driver.execute_script("arguments[0].click();", login_btn)
-    
-    WebDriverWait(driver, 10).until(lambda d: "/login" not in d.current_url)
+        wait = WebDriverWait(driver, 20)
+        wait.until(EC.presence_of_element_located((By.ID, "email"))).send_keys(email)
+        wait.until(EC.presence_of_element_located((By.ID, "password"))).send_keys(password)
+        login_btn = driver.find_element(By.CSS_SELECTOR, "button.auth-page__button.js-form-button")
+        driver.execute_script("arguments[0].click();", login_btn)
+        
+        wait_for_login_redirect(driver)
+        with open(AUTH_COOKIES_PATH, "w") as f:
+            json.dump(driver.get_cookies(), f)
     
     # 2. Add item to cart
     driver.get("https://www.dr.com.tr/")
@@ -65,7 +157,7 @@ def login_and_prepare_checkout(driver):
     search_box.send_keys("Harry Potter")
     driver.execute_script("arguments[0].click();", driver.find_element(By.ID, "searchIcon"))
     
-    wait = WebDriverWait(driver, 10)
+    wait = WebDriverWait(driver, 20)
     wait.until(lambda d: "q=Harry" in d.current_url)
     time.sleep(2)
     
@@ -77,11 +169,25 @@ def login_and_prepare_checkout(driver):
     # 3. Go to checkout
     driver.get("https://www.dr.com.tr/sepetim")
     wait.until(lambda d: "/sepetim" in d.current_url)
-    checkout_btn = driver.find_element(By.CLASS_NAME, "js-begin-checkout")
+    checkout_btn = WebDriverWait(driver, 20).until(
+        lambda d: next(
+            (
+                element for element in d.find_elements(By.CSS_SELECTOR, "button, a")
+                if "checkout" in " ".join(filter(None, [
+                    (element.text or "").strip(),
+                    element.get_attribute("class") or "",
+                    element.get_attribute("href") or "",
+                ])).lower()
+                or "başla" in (element.text or "").lower()
+                or "devam" in (element.text or "").lower()
+            ),
+            None,
+        )
+    )
     driver.execute_script("arguments[0].click();", checkout_btn)
     
     # Wait for address selection/creation page
-    wait.until(lambda d: "teslimat" in d.current_url.lower() or "adres" in d.current_url.lower())
+    wait_for_checkout_page(driver)
     time.sleep(2)
 
 # --- TEST CASES ---
@@ -98,7 +204,7 @@ def test_checkout_address_required_fields(driver):
         pass
         
     # Submit empty form
-    submit_btn = driver.find_element(By.CSS_SELECTOR, ".js-save-address, #btnSaveAddress")
+    submit_btn = find_checkout_action_button(driver)
     driver.execute_script("arguments[0].click();", submit_btn)
     time.sleep(2)
     
@@ -124,7 +230,7 @@ def test_checkout_address_invalid_format(driver):
     except:
         pytest.skip("Could not locate phone input field.")
         
-    submit_btn = driver.find_element(By.CSS_SELECTOR, ".js-save-address, #btnSaveAddress")
+    submit_btn = find_checkout_action_button(driver)
     driver.execute_script("arguments[0].click();", submit_btn)
     time.sleep(2)
     

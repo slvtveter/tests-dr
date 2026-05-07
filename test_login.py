@@ -2,12 +2,18 @@ import pytest
 import time
 import json
 import os
+import tempfile
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
+from selenium.common.exceptions import NoSuchWindowException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+
+LOGIN_SUCCESS_TIMEOUT = 180
+CHROME_PROFILE_DIR = os.path.join(tempfile.gettempdir(), "dr-com-tr-selenium-profile")
+AUTH_COOKIES_PATH = os.path.join(tempfile.gettempdir(), "dr-com-tr-auth-cookies.json")
 
 # Helper to load credentials from a config file (outside version control)
 def get_credentials():
@@ -22,6 +28,7 @@ def get_credentials():
 def driver():
     options = webdriver.ChromeOptions()
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    options.add_argument(f"--user-data-dir={CHROME_PROFILE_DIR}")
     
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
@@ -44,12 +51,17 @@ def handle_popups(driver):
         except:
             pass
 
+def save_auth_cookies(driver):
+    with open(AUTH_COOKIES_PATH, "w") as f:
+        json.dump(driver.get_cookies(), f)
+
 def perform_login(driver, email, password):
     driver.get("https://www.dr.com.tr/login")
     handle_popups(driver)
     
-    email_field = driver.find_element(By.ID, "email")
-    password_field = driver.find_element(By.ID, "password")
+    wait = WebDriverWait(driver, 20)
+    email_field = wait.until(EC.presence_of_element_located((By.ID, "email")))
+    password_field = wait.until(EC.presence_of_element_located((By.ID, "password")))
     
     email_field.clear()
     if email:
@@ -63,6 +75,22 @@ def perform_login(driver, email, password):
     login_button = driver.find_element(By.CSS_SELECTOR, "button.auth-page__button.js-form-button")
     driver.execute_script("arguments[0].click();", login_button)
 
+def wait_for_login_redirect(driver, timeout=LOGIN_SUCCESS_TIMEOUT):
+    """Wait longer for manual CAPTCHA completion before asserting login success."""
+    def login_redirected(d):
+        try:
+            current_url = d.current_url or ""
+        except NoSuchWindowException:
+            return False
+        return bool(current_url) and "/login" not in current_url
+
+    WebDriverWait(driver, timeout, poll_frequency=1).until(login_redirected)
+
+def assert_native_validation(driver, field):
+    message = driver.execute_script("return arguments[0].validationMessage;", field)
+    assert message
+    assert driver.execute_script("return arguments[0].checkValidity();", field) is False
+
 # --- TEST CASES ---
 
 def test_login_valid_credentials(driver):
@@ -73,7 +101,8 @@ def test_login_valid_credentials(driver):
     perform_login(driver, email, password)
     
     # Wait for navigation away from login page to confirm success
-    WebDriverWait(driver, 10).until(lambda d: "/login" not in d.current_url)
+    wait_for_login_redirect(driver)
+    save_auth_cookies(driver)
     assert "/login" not in driver.current_url
 
 def test_login_wrong_password(driver):
@@ -94,15 +123,12 @@ def test_login_invalid_email_format(driver):
     
     time.sleep(2)
     assert "/login" in driver.current_url
-    # HTML5 validation or JS validation should block it
-    page_text = driver.page_source.lower()
-    assert "geçerli" in page_text or "format" in page_text or "lütfen" in page_text
+    assert_native_validation(driver, driver.find_element(By.ID, "email"))
 
 def test_login_empty_fields(driver):
     perform_login(driver, "", "")
     
     time.sleep(2)
     assert "/login" in driver.current_url
-    # Validation messages usually say "zorunlu" (required) or "boş bırakılamaz" (cannot be empty)
-    page_text = driver.page_source.lower()
-    assert "zorunlu" in page_text or "boş" in page_text or "gerekli" in page_text
+    assert_native_validation(driver, driver.find_element(By.ID, "email"))
+    assert_native_validation(driver, driver.find_element(By.ID, "password"))
