@@ -1,9 +1,10 @@
 # Project Overview
 
-This repository contains test automation for two applications:
+This repository contains test automation for three test areas:
 
 1. **dr.com.tr Books / New Releases** — a live e-commerce website tested through the browser with Selenium WebDriver.
 2. **Library-DB-Express** — a local Node.js / Express REST API for a library system tested with JUnit.
+3. **library-api-tests-with-pit** — JUnit unit tests for `BookService` with PIT mutation coverage.
 
 ## What the project covers
 
@@ -35,6 +36,7 @@ The tests verify:
 
 - `Library-DB-Express/` — the Express + SQLite library application
 - `library-api-tests/` — JUnit tests for the library API
+- `library-api-tests-with-pit/` — unit tests and PIT coverage for `BookService`
 - `test_search.py`, `test_login.py`, `test_cart.py`, `test_checkout.py` — Selenium tests for dr.com.tr
 
 ## Run the projects
@@ -43,6 +45,7 @@ The tests verify:
 
 - Node.js and npm for `Library-DB-Express`
 - Java 17+ and Maven for `library-api-tests`
+- Java 21+ and Maven for `library-api-tests-with-pit`
 - Python 3.10+ for the Selenium tests
 - Google Chrome for browser automation
 
@@ -70,6 +73,16 @@ mvn test
 ```
 
 This project already uses `pom.xml` for Java dependencies, so no extra Java requirements file is needed.
+
+### BookService + PIT tests
+
+```bash
+cd library-api-tests-with-pit
+mvn test
+mvn org.pitest:pitest-maven:mutationCoverage
+```
+
+This module is focused on the `BookService` class and its mutation coverage report.
 
 ### Selenium tests
 
